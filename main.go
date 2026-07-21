@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 const fileName = "todos.json"
@@ -49,7 +50,6 @@ func addTask(tasks []Task, text string) []Task {
 }
 
 func doneTask(tasks []Task, index int) ([]Task, error) {
-
 	i := findTaskIndex(tasks, index)
 	if i == -1 {
 		return tasks, fmt.Errorf("такой задачи не существует")
@@ -92,21 +92,78 @@ func main() {
 			Text string `json:"text"`
 		}
 		body := bodyJSON{}
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil || body.Text == "" {
+		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
 			http.Error(w, "не удалось получить JSON", http.StatusBadRequest)
-			if body.Text == "" {
-				http.Error(w, "text пустой", http.StatusBadRequest)
-				return
-			}
 			return
 		}
+		if body.Text == "" {
+			http.Error(w, "text пустой", http.StatusBadRequest)
+			return
+		}
+
 		tasks = addTask(tasks, body.Text)
-		fmt.Fprintf(w, "Задача успешно добавлена: %+v \n", tasks[len(tasks)-1])
 
 		if err := saveList(tasks); err != nil {
 			http.Error(w, "не удалось сохранить файл", http.StatusInternalServerError)
+			return
 		}
 
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(tasks[len(tasks)-1])
+
+	})
+
+	http.HandleFunc("PATCH /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		tasks, err := loadList()
+		if err != nil {
+			http.Error(w, "не удалось загрузить задачи", http.StatusInternalServerError)
+			return
+		}
+		index, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			http.Error(w, "Некорректный ввод номера задачи", http.StatusBadRequest)
+			return
+		}
+
+		if tasks, err = doneTask(tasks, index); err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		if err := saveList(tasks); err != nil {
+			http.Error(w, "не удалось сохранить файл", http.StatusInternalServerError)
+			return
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(tasks[findTaskIndex(tasks, index)])
+
+	})
+
+	http.HandleFunc("DELETE /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		tasks, err := loadList()
+		if err != nil {
+			http.Error(w, "не удалось загрузить задачи", http.StatusInternalServerError)
+			return
+		}
+		index, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			http.Error(w, "некорректный ввод номера задачи", http.StatusBadRequest)
+			return
+		}
+		tasks, err = deleteTask(tasks, index)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusNotFound)
+			return
+		}
+
+		if err := saveList(tasks); err != nil {
+			http.Error(w, "не удалось сохранить файл", http.StatusInternalServerError)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
 	})
 
 	fmt.Println("сервер запущен на :8080")
