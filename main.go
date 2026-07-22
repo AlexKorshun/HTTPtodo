@@ -8,17 +8,24 @@ import (
 	"strconv"
 )
 
-const fileName = "todos.json"
-
 type Task struct {
 	ID   int    `json:"id"`
 	Text string `json:"text"`
 	Done bool   `json:"done"`
 }
 
-func loadList() ([]Task, error) {
+type Storage interface {
+	Load() ([]Task, error)
+	Save(tasks []Task) error
+}
+
+type FileStorage struct {
+	fileName string
+}
+
+func (s *FileStorage) Load() ([]Task, error) {
 	var tasks []Task
-	data, err := os.ReadFile(fileName)
+	data, err := os.ReadFile(s.fileName)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return tasks, nil
@@ -29,12 +36,12 @@ func loadList() ([]Task, error) {
 	return tasks, err
 }
 
-func saveList(tasks []Task) error {
+func (s *FileStorage) Save(tasks []Task) error {
 	data, err := json.MarshalIndent(tasks, "", " ")
 	if err != nil {
 		return err
 	}
-	err = os.WriteFile(fileName, data, 0644)
+	err = os.WriteFile(s.fileName, data, 0644)
 	return err
 }
 
@@ -71,9 +78,9 @@ func deleteTask(tasks []Task, index int) ([]Task, error) {
 }
 
 func main() {
-
+	var storage Storage = &FileStorage{fileName: "todos.json"}
 	http.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := loadList()
+		tasks, err := storage.Load()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
@@ -82,7 +89,7 @@ func main() {
 	})
 
 	http.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := loadList()
+		tasks, err := storage.Load()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
@@ -102,7 +109,7 @@ func main() {
 
 		tasks = addTask(tasks, body.Text)
 
-		if err := saveList(tasks); err != nil {
+		if err := storage.Save(tasks); err != nil {
 			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
 			return
 		}
@@ -110,7 +117,7 @@ func main() {
 	})
 
 	http.HandleFunc("PATCH /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := loadList()
+		tasks, err := storage.Load()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
@@ -126,7 +133,7 @@ func main() {
 			return
 		}
 
-		if err := saveList(tasks); err != nil {
+		if err := storage.Save(tasks); err != nil {
 			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
 			return
 		}
@@ -135,7 +142,7 @@ func main() {
 	})
 
 	http.HandleFunc("DELETE /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := loadList()
+		tasks, err := storage.Load()
 		if err != nil {
 			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
@@ -151,7 +158,7 @@ func main() {
 			return
 		}
 
-		if err := saveList(tasks); err != nil {
+		if err := storage.Save(tasks); err != nil {
 			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
 			return
 		}
