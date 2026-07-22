@@ -75,17 +75,16 @@ func main() {
 	http.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
 		tasks, err := loadList()
 		if err != nil {
-			http.Error(w, "не удалось загрузить задачи", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
 		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(tasks)
+		respondJSON(w, http.StatusOK, tasks)
 	})
 
 	http.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {
 		tasks, err := loadList()
 		if err != nil {
-			http.Error(w, "не удалось загрузить задачи", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
 		}
 		type bodyJSON struct {
@@ -93,74 +92,67 @@ func main() {
 		}
 		body := bodyJSON{}
 		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
-			http.Error(w, "не удалось получить JSON", http.StatusBadRequest)
+			respondError(w, http.StatusBadRequest, "не удалось получить JSON")
 			return
 		}
 		if body.Text == "" {
-			http.Error(w, "text пустой", http.StatusBadRequest)
+			respondError(w, http.StatusBadRequest, "указан пустой текст")
 			return
 		}
 
 		tasks = addTask(tasks, body.Text)
 
 		if err := saveList(tasks); err != nil {
-			http.Error(w, "не удалось сохранить файл", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
 			return
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(tasks[len(tasks)-1])
-
+		respondJSON(w, http.StatusCreated, tasks[len(tasks)-1])
 	})
 
 	http.HandleFunc("PATCH /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
 		tasks, err := loadList()
 		if err != nil {
-			http.Error(w, "не удалось загрузить задачи", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
 		}
 		index, err := strconv.Atoi(r.PathValue("id"))
 		if err != nil {
-			http.Error(w, "Некорректный ввод номера задачи", http.StatusBadRequest)
+			respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
 			return
 		}
 
 		if tasks, err = doneTask(tasks, index); err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			respondError(w, http.StatusNotFound, err.Error())
 			return
 		}
 
 		if err := saveList(tasks); err != nil {
-			http.Error(w, "не удалось сохранить файл", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
 			return
 		}
-
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(tasks[findTaskIndex(tasks, index)])
+		respondJSON(w, http.StatusOK, tasks[findTaskIndex(tasks, index)])
 
 	})
 
 	http.HandleFunc("DELETE /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
 		tasks, err := loadList()
 		if err != nil {
-			http.Error(w, "не удалось загрузить задачи", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
 			return
 		}
 		index, err := strconv.Atoi(r.PathValue("id"))
 		if err != nil {
-			http.Error(w, "некорректный ввод номера задачи", http.StatusBadRequest)
+			respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
 			return
 		}
 		tasks, err = deleteTask(tasks, index)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusNotFound)
+			respondError(w, http.StatusNotFound, err.Error())
 			return
 		}
 
 		if err := saveList(tasks); err != nil {
-			http.Error(w, "не удалось сохранить файл", http.StatusInternalServerError)
+			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -180,4 +172,14 @@ func findTaskIndex(tasks []Task, id int) int {
 		}
 	}
 	return -1
+}
+
+func respondJSON(w http.ResponseWriter, status int, data any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(data)
+}
+
+func respondError(w http.ResponseWriter, status int, message string) {
+	respondJSON(w, status, map[string]string{"error": message})
 }
