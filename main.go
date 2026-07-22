@@ -2,10 +2,16 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
+)
+
+var (
+	ErrEmptyText = errors.New("текст задачи не может быть пустым")
+	ErrNotFound  = errors.New("задача не найдена")
 )
 
 type Task struct {
@@ -21,6 +27,114 @@ type Storage interface {
 
 type FileStorage struct {
 	fileName string
+}
+
+type TaskService struct {
+	storage Storage
+}
+
+func (a *TaskService) Add(text string) (Task, error) {
+	if text == "" {
+		return Task{}, ErrEmptyText
+	}
+	tasks, err := a.storage.Load()
+	if err != nil {
+		return Task{}, fmt.Errorf("add: загрузка задач: %w", err)
+	}
+
+	tasks = addTask(tasks, text)
+	if err := a.storage.Save(tasks); err != nil {
+		return Task{}, fmt.Errorf("add: сохранение файла: не удалось сохранить файл: %w", err)
+	}
+	return tasks[len(tasks)-1], nil
+}
+
+func main() {
+
+	taskService := TaskService{storage: &FileStorage{fileName: "todos.json"}}
+	http.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
+		tasks, err := taskService.storage.Load()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
+			return
+		}
+		respondJSON(w, http.StatusOK, tasks)
+	})
+
+	http.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {
+		type bodyJSON struct {
+			Text string `json:"text"`
+		}
+		body := bodyJSON{}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			respondError(w, http.StatusBadRequest, "не удалось получить JSON")
+			return
+		}
+
+		task, err := taskService.Add(body.Text)
+
+		if err != nil {
+			if errors.Is(err, ErrEmptyText) {
+				respondError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			respondError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		respondJSON(w, http.StatusCreated, task)
+	})
+
+	http.HandleFunc("PATCH /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		tasks, err := taskService.storage.Load()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
+			return
+		}
+		index, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
+			return
+		}
+
+		if tasks, err = doneTask(tasks, index); err != nil {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+
+		if err := taskService.storage.Save(tasks); err != nil {
+			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
+			return
+		}
+		respondJSON(w, http.StatusOK, tasks[findTaskIndex(tasks, index)])
+
+	})
+
+	http.HandleFunc("DELETE /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
+		tasks, err := taskService.storage.Load()
+		if err != nil {
+			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
+			return
+		}
+		index, err := strconv.Atoi(r.PathValue("id"))
+		if err != nil {
+			respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
+			return
+		}
+		tasks, err = deleteTask(tasks, index)
+		if err != nil {
+			respondError(w, http.StatusNotFound, err.Error())
+			return
+		}
+
+		if err := taskService.storage.Save(tasks); err != nil {
+			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	})
+
+	fmt.Println("сервер запущен на :8080")
+	http.ListenAndServe(":8080", nil)
 }
 
 func (s *FileStorage) Load() ([]Task, error) {
@@ -75,98 +189,6 @@ func deleteTask(tasks []Task, index int) ([]Task, error) {
 	tasks = append(tasks[:i], tasks[i+1:]...)
 	return tasks, nil
 
-}
-
-func main() {
-	var storage Storage = &FileStorage{fileName: "todos.json"}
-	http.HandleFunc("GET /tasks", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := storage.Load()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
-			return
-		}
-		respondJSON(w, http.StatusOK, tasks)
-	})
-
-	http.HandleFunc("POST /tasks", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := storage.Load()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
-			return
-		}
-		type bodyJSON struct {
-			Text string `json:"text"`
-		}
-		body := bodyJSON{}
-		if err = json.NewDecoder(r.Body).Decode(&body); err != nil {
-			respondError(w, http.StatusBadRequest, "не удалось получить JSON")
-			return
-		}
-		if body.Text == "" {
-			respondError(w, http.StatusBadRequest, "указан пустой текст")
-			return
-		}
-
-		tasks = addTask(tasks, body.Text)
-
-		if err := storage.Save(tasks); err != nil {
-			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
-			return
-		}
-		respondJSON(w, http.StatusCreated, tasks[len(tasks)-1])
-	})
-
-	http.HandleFunc("PATCH /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := storage.Load()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
-			return
-		}
-		index, err := strconv.Atoi(r.PathValue("id"))
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
-			return
-		}
-
-		if tasks, err = doneTask(tasks, index); err != nil {
-			respondError(w, http.StatusNotFound, err.Error())
-			return
-		}
-
-		if err := storage.Save(tasks); err != nil {
-			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
-			return
-		}
-		respondJSON(w, http.StatusOK, tasks[findTaskIndex(tasks, index)])
-
-	})
-
-	http.HandleFunc("DELETE /tasks/{id}", func(w http.ResponseWriter, r *http.Request) {
-		tasks, err := storage.Load()
-		if err != nil {
-			respondError(w, http.StatusInternalServerError, "не удалось загрузить задачи")
-			return
-		}
-		index, err := strconv.Atoi(r.PathValue("id"))
-		if err != nil {
-			respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
-			return
-		}
-		tasks, err = deleteTask(tasks, index)
-		if err != nil {
-			respondError(w, http.StatusNotFound, err.Error())
-			return
-		}
-
-		if err := storage.Save(tasks); err != nil {
-			respondError(w, http.StatusInternalServerError, "не удалось сохранить файл")
-			return
-		}
-		w.WriteHeader(http.StatusNoContent)
-	})
-
-	fmt.Println("сервер запущен на :8080")
-	http.ListenAndServe(":8080", nil)
 }
 
 func findTaskIndex(tasks []Task, id int) int {
