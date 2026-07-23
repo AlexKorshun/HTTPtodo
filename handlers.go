@@ -46,13 +46,13 @@ func (h *Handler) postHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) patchHandler(w http.ResponseWriter, r *http.Request) {
 
-	index, err := strconv.Atoi(r.PathValue("id"))
+	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
 		return
 	}
 
-	task, err := h.taskService.Change(index)
+	task, err := h.taskService.Change(id)
 
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
@@ -69,13 +69,13 @@ func (h *Handler) patchHandler(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) deleteHandler(w http.ResponseWriter, r *http.Request) {
 
-	index, err := strconv.Atoi(r.PathValue("id"))
+	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		respondError(w, http.StatusBadRequest, "некорректный ввод номера задачи")
 		return
 	}
 
-	if err = h.taskService.Delete(index); err != nil {
+	if err = h.taskService.Delete(id); err != nil {
 		if errors.Is(err, ErrNotFound) {
 			respondError(w, http.StatusNotFound, err.Error())
 			return

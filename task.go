@@ -13,19 +13,14 @@ var (
 	ErrNotFound  = errors.New("задача не найдена")
 )
 
-func addTask(tasks []Task, text string) []Task {
-	var task Task
-	if len(tasks) == 0 {
-		task = Task{1, text, false}
-	} else {
-		task = Task{tasks[len(tasks)-1].ID + 1, text, false}
-	}
+func addTask(tasks []Task, text string, id int) []Task {
+	task := Task{id, text, false}
 	tasks = append(tasks, task)
 	return tasks
 }
 
-func doneTask(tasks []Task, index int) ([]Task, error) {
-	i := findTaskIndex(tasks, index)
+func doneTask(tasks []Task, id int) ([]Task, error) {
+	i := findTaskIndex(tasks, id)
 	if i == -1 {
 		return tasks, ErrNotFound
 	}
@@ -33,8 +28,8 @@ func doneTask(tasks []Task, index int) ([]Task, error) {
 	return tasks, nil
 }
 
-func deleteTask(tasks []Task, index int) ([]Task, error) {
-	i := findTaskIndex(tasks, index)
+func deleteTask(tasks []Task, id int) ([]Task, error) {
+	i := findTaskIndex(tasks, id)
 	if i == -1 {
 		return tasks, ErrNotFound
 	}
