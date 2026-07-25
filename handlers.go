@@ -6,10 +6,19 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+
+	"github.com/AlexKorshun/HTTPtodo/internal/model"
 )
 
+type TaskService interface {
+	List() ([]model.Task, error)
+	Add(text string) (model.Task, error)
+	Change(id int) (model.Task, error)
+	Delete(id int) error
+}
+
 type Handler struct {
-	taskService *TaskService
+	taskService TaskService
 }
 
 func (h *Handler) getHandler(w http.ResponseWriter, r *http.Request) {
@@ -33,7 +42,7 @@ func (h *Handler) postHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	task, err := h.taskService.Add(body.Text)
 	if err != nil {
-		if errors.Is(err, ErrEmptyText) {
+		if errors.Is(err, model.ErrEmptyText) {
 			respondError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -55,7 +64,7 @@ func (h *Handler) patchHandler(w http.ResponseWriter, r *http.Request) {
 	task, err := h.taskService.Change(id)
 
 	if err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if errors.Is(err, model.ErrNotFound) {
 			respondError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -76,7 +85,7 @@ func (h *Handler) deleteHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err = h.taskService.Delete(id); err != nil {
-		if errors.Is(err, ErrNotFound) {
+		if errors.Is(err, model.ErrNotFound) {
 			respondError(w, http.StatusNotFound, err.Error())
 			return
 		}
