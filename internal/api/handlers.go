@@ -1,4 +1,4 @@
-package main
+package api
 
 import (
 	"encoding/json"
@@ -21,7 +21,11 @@ type Handler struct {
 	taskService TaskService
 }
 
-func (h *Handler) getHandler(w http.ResponseWriter, r *http.Request) {
+func NewHandler(taskService TaskService) *Handler {
+	return &Handler{taskService: taskService}
+}
+
+func (h *Handler) GetHandler(w http.ResponseWriter, r *http.Request) {
 	tasks, err := h.taskService.List()
 	if err != nil {
 		log.Printf("GET /tasks: %v", err)
@@ -31,7 +35,7 @@ func (h *Handler) getHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, tasks)
 }
 
-func (h *Handler) postHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) PostHandler(w http.ResponseWriter, r *http.Request) {
 	type bodyJSON struct {
 		Text string `json:"text"`
 	}
@@ -53,7 +57,7 @@ func (h *Handler) postHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusCreated, task)
 }
 
-func (h *Handler) patchHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) PatchHandler(w http.ResponseWriter, r *http.Request) {
 
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
@@ -76,7 +80,7 @@ func (h *Handler) patchHandler(w http.ResponseWriter, r *http.Request) {
 
 }
 
-func (h *Handler) deleteHandler(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) DeleteHandler(w http.ResponseWriter, r *http.Request) {
 
 	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {

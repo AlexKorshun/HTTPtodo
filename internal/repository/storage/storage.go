@@ -99,8 +99,6 @@ func (s *FileStorage) Delete(id int) error {
 	return nil
 }
 
-// БЛЯ надо преобразование из model.Task в jsonTask ну крч похуй сделаешь 😃
-
 func addTask(tasks []JsonTask, text string, id int) []JsonTask {
 	task := JsonTask{id, text, false}
 	tasks = append(tasks, task)
