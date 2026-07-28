@@ -1,137 +1,86 @@
 package postgres
 
 import (
-	"encoding/json"
+	"context"
+	"errors"
 	"fmt"
-	"os"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/AlexKorshun/HTTPtodo/internal/model"
 )
 
 type PostgresStorage struct {
-	fileName string
+	pool *pgxpool.Pool
 }
 
-type File struct {
-	NextID int        `json:"nextID"`
-	Tasks  []JsonTask `json:"tasks"`
-}
-
-func NewPostgresStorage(fileName string) *PostgresStorage {
-	return &PostgresStorage{fileName: fileName}
-}
-
-func (s *PostgresStorage) load() (File, error) {
-	var file File
-	data, err := os.ReadFile(s.fileName)
+func NewPostgresStorage(databaseURL string) (*PostgresStorage, error) {
+	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return File{NextID: 1}, nil
-		}
-		return file, err
+		return nil, err
 	}
-	err = json.Unmarshal(data, &file)
-	return file, err
-}
-
-func (s *PostgresStorage) save(file File) error {
-	data, err := json.MarshalIndent(file, "", " ")
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(s.fileName, data, 0644)
-	return err
+	return &PostgresStorage{pool: pool}, nil
 }
 
 func (s *PostgresStorage) GetAll() ([]model.Task, error) {
-
-	file, err := s.load()
+	ctx := context.Background()
+	tasks := []model.Task{}
+	rows, err := s.pool.Query(ctx, "SELECT id, text, done FROM tasks")
 	if err != nil {
-		return []model.Task{}, fmt.Errorf("GetAll: загрузка задач: %w", err)
+		return tasks, fmt.Errorf("GetAll: чтение из базы даных: %w", err)
 	}
+	defer rows.Close()
+	for rows.Next() {
+		t := model.Task{}
+		err := rows.Scan(&t.ID, &t.Text, &t.Done)
+		if err != nil {
+			return []model.Task{}, fmt.Errorf("GetAll: ошибка внутри цикла чтения на элементе ID = %d: %w", t.ID, err)
+		}
 
-	return convArrayToTask(file.Tasks), nil
+		tasks = append(tasks, t)
+	}
+	if err := rows.Err(); err != nil {
+		return []model.Task{}, fmt.Errorf("GetAll: ошибка после цикла: %w", err)
+	}
+	return tasks, nil
 }
 
 func (s *PostgresStorage) Create(text string) (model.Task, error) {
-	file, err := s.load()
+	ctx := context.Background()
+	t := model.Task{}
+	row := s.pool.QueryRow(ctx, "INSERT INTO tasks (text) VALUES ($1) RETURNING id, text, done", text)
+	err := row.Scan(&t.ID, &t.Text, &t.Done)
 	if err != nil {
-		return model.Task{}, fmt.Errorf("Create: загрузка задач: %w", err)
+		return model.Task{}, fmt.Errorf("Create: %w", err)
 	}
-	file.Tasks = addTask(file.Tasks, text, file.NextID)
-	file.NextID++
-	if err := s.save(file); err != nil {
-		return model.Task{}, fmt.Errorf("Create: сохранение файла: не удалось сохранить файл: %w", err)
-	}
-	return file.Tasks[len(file.Tasks)-1].convToTask(), nil
+	return t, nil
 }
 
 func (s *PostgresStorage) ToggleDone(id int) (model.Task, error) {
-	file, err := s.load()
+	ctx := context.Background()
+	t := model.Task{}
+	row := s.pool.QueryRow(ctx, "UPDATE tasks SET done = NOT done WHERE id = $1 RETURNING id, text, done", id)
+	err := row.Scan(&t.ID, &t.Text, &t.Done)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.Task{}, model.ErrNotFound
+	}
 	if err != nil {
-		return model.Task{}, fmt.Errorf("ToggleDone: загрузка задач: %w", err)
+		return model.Task{}, fmt.Errorf("ToggleDone: %w", err)
 	}
-
-	if file.Tasks, err = doneTask(file.Tasks, id); err != nil {
-		return model.Task{}, fmt.Errorf("ToggleDone: изменение состояния задачи: %w", err)
-	}
-
-	if err := s.save(file); err != nil {
-		return model.Task{}, fmt.Errorf("ToggleDone: сохранение файла: не удалось сохранить файл: %w", err)
-	}
-	return file.Tasks[findTaskIndex(file.Tasks, id)].convToTask(), nil
+	return t, nil
 }
 
 func (s *PostgresStorage) Delete(id int) error {
-	file, err := s.load()
-	if err != nil {
-		return fmt.Errorf("Delete: загрузка задач: %w", err)
-	}
+	ctx := context.Background()
+	tag, err := s.pool.Exec(ctx, "DELETE FROM tasks WHERE id = $1", id)
 
-	file.Tasks, err = deleteTask(file.Tasks, id)
 	if err != nil {
-		return fmt.Errorf("Delete: удаление задачи: %w", err)
+		return fmt.Errorf("Delete: %w", err)
 	}
-
-	if err := s.save(file); err != nil {
-		return fmt.Errorf("Delete: сохранение файла: не удалось сохранить файл: %w", err)
+	if tag.RowsAffected() == 0 {
+		return model.ErrNotFound
 	}
 	return nil
-}
 
-func addTask(tasks []JsonTask, text string, id int) []JsonTask {
-	task := JsonTask{id, text, false}
-	tasks = append(tasks, task)
-	return tasks
-}
-
-func doneTask(tasks []JsonTask, id int) ([]JsonTask, error) {
-	i := findTaskIndex(tasks, id)
-	if i == -1 {
-		return tasks, model.ErrNotFound
-	}
-	tasks[i].Done = !tasks[i].Done
-	return tasks, nil
-}
-
-func deleteTask(tasks []JsonTask, id int) ([]JsonTask, error) {
-	i := findTaskIndex(tasks, id)
-	if i == -1 {
-		return tasks, model.ErrNotFound
-	}
-	tasks = append(tasks[:i], tasks[i+1:]...)
-	return tasks, nil
-
-}
-
-func findTaskIndex(tasks []JsonTask, id int) int {
-	if id < 0 {
-		return -1
-	}
-	for i, value := range tasks {
-		if value.ID == id {
-			return i
-		}
-	}
-	return -1
 }

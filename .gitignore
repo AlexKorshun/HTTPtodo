@@ -1,5 +1,7 @@
 todo-api
 todos.json
 HTTPtodo
+httptodo
+.env
 *.out
 CLAUDE.md
