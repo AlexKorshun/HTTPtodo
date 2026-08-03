@@ -1,40 +1,42 @@
 package service
 
 import (
+	"context"
+
 	"github.com/AlexKorshun/HTTPtodo/internal/model"
 )
 
 type Storage interface {
-	GetAll() ([]model.Task, error)
-	Create(text string) (model.Task, error)
-	ToggleDone(id int) (model.Task, error)
-	Delete(id int) error
+	GetAll(ctx context.Context) ([]model.Task, error)
+	Create(ctx context.Context, text string) (model.Task, error)
+	ToggleDone(ctx context.Context, id int) (model.Task, error)
+	Delete(ctx context.Context, id int) error
 }
 
-type TaskService struct {
+type Service struct {
 	storage Storage
 }
 
-func NewTaskService(storage Storage) *TaskService {
-	return &TaskService{storage: storage}
+func New(storage Storage) *Service {
+	return &Service{storage: storage}
 }
 
-func (a *TaskService) List() ([]model.Task, error) {
-	return a.storage.GetAll()
+func (a *Service) List(ctx context.Context) ([]model.Task, error) {
+	return a.storage.GetAll(ctx)
 }
 
-func (a *TaskService) Add(text string) (model.Task, error) {
+func (a *Service) Add(ctx context.Context, text string) (model.Task, error) {
 	if text == "" {
 		return model.Task{}, model.ErrEmptyText
 	}
-	return a.storage.Create(text)
+	return a.storage.Create(ctx, text)
 }
 
-func (a *TaskService) Change(id int) (model.Task, error) {
-	return a.storage.ToggleDone(id)
+func (a *Service) Change(ctx context.Context, id int) (model.Task, error) {
+	return a.storage.ToggleDone(ctx, id)
 }
 
-func (a *TaskService) Delete(id int) error {
-	return a.storage.Delete(id)
+func (a *Service) Delete(ctx context.Context, id int) error {
+	return a.storage.Delete(ctx, id)
 
 }

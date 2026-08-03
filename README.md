@@ -19,15 +19,20 @@
 HTTP-запрос
    │
    ▼
-api.Handler ──(интерфейс TaskService)──► service.TaskService ──(интерфейс Storage)──► postgres.PostgresStorage ──► PostgreSQL
+httpapi.Handler ──(интерфейс TaskService)──► service.Service ──(интерфейс Storage)──► postgres.Storage ──► PostgreSQL
 ```
 
-- **`internal/api`** — HTTP-хендлеры. Разбор запроса, коды ответов, JSON.
-  Ответы через `respondJSON` / `respondError`.
-- **`internal/service`** — бизнес-логика (`TaskService`). Валидация (например, пустой текст)
+Интерфейсы объявлены на стороне потребителя: `TaskService` — в `httpapi`, `Storage` — в `service`.
+Благодаря этому реализации хранилища взаимозаменяемы (PostgreSQL или файл), а верхние слои
+о конкретной реализации не знают.
+
+- **`internal/api/httpapi`** — HTTP-слой. Разбор запроса, коды ответов, JSON, роутинг и запуск
+  сервера. Ответы через `respondJSON` / `respondError`.
+- **`internal/service`** — бизнес-логика (`Service`). Валидация (например, пустой текст)
   и проброс в хранилище. Объявляет интерфейс `Storage`.
 - **`internal/repository/postgres`** — реализация `Storage` поверх PostgreSQL (`pgx`).
-- **`internal/repository/storage`** — вспомогательные типы/маппинг хранилища.
+- **`internal/repository/storage`** — альтернативная реализация `Storage` поверх JSON-файла
+  (`FileStorage`).
 - **`internal/model`** — доменные модели (`Task`) и sentinel-ошибки
   `ErrNotFound` / `ErrEmptyText`, различаемые через `errors.Is`.
 - **`internal/config`** — загрузка конфигурации из окружения / `.env`.
@@ -36,15 +41,20 @@ api.Handler ──(интерфейс TaskService)──► service.TaskService 
 ### Структура проекта
 
 ```
-cmd/httptodo/main.go            точка входа
+cmd/httptodo/main.go            точка входа (сборка зависимостей)
 internal/
-  api/handlers.go               HTTP-хендлеры
+  api/httpapi/                  HTTP-слой: хендлеры, роутинг, сервер
+    handler.go                  тип Handler + интерфейс TaskService
+    tasks.go                    хендлеры ручек /tasks
+    respond.go                  хелперы ответа (JSON / ошибки)
+    routes.go                   регистрация маршрутов (NewRouter)
+    httpserver.go               запуск HTTP-сервера (Server)
   service/service.go            бизнес-логика + интерфейс Storage
   repository/postgres/          реализация Storage на PostgreSQL
-  repository/storage/           маппинг/вспомогательное хранилище
+  repository/storage/           файловая (JSON) реализация Storage
   model/                        модели и ошибки
   config/                       конфигурация
-schema.sql                      схема БД
+migrations/                     SQL-миграции схемы БД (goose)
 docker-compose.yml              PostgreSQL для локального запуска
 ```
 
@@ -69,8 +79,6 @@ PORT=<port>
 
 ### 1. Поднять PostgreSQL
 
-`docker-compose` поднимает Postgres и автоматически применяет `schema.sql`:
-
 ```bash
 docker compose up -d
 ```
@@ -79,10 +87,24 @@ docker compose up -d
 
 ```bash
 cp .env.example .env
-# при необходимости отредактировать DATABASE_URL / PORT
+# затем открыть .env и подставить реальные DATABASE_URL и PORT
 ```
 
-### 3. Запустить приложение
+### 3. Применить миграции
+
+Схема БД версионируется через [goose](https://github.com/pressly/goose).
+Установите утилиту и накатите миграции (goose читает `DATABASE_URL` из окружения,
+`.env` он сам не подхватывает — экспортируйте переменную заранее):
+
+```bash
+go install github.com/pressly/goose/v3/cmd/goose@latest
+
+export $(grep -v '^#' .env | xargs)
+goose -dir migrations postgres "$DATABASE_URL" up
+goose -dir migrations postgres "$DATABASE_URL" status
+```
+
+### 4. Запустить приложение
 
 ```bash
 go run ./cmd/httptodo

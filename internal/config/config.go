@@ -17,12 +17,12 @@ func Load() (Config, error) {
 	godotenv.Load(".env")
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		return Config{}, fmt.Errorf("DATABASE_URL not found")
+		return Config{}, fmt.Errorf("DATABASE_URL not set")
 	}
 	config.DatabaseURL = dbURL
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = "8080"
+		return Config{}, fmt.Errorf("PORT not set")
 	}
 	config.Port = port
 	return config, nil

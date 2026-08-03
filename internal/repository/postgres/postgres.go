@@ -9,24 +9,33 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/AlexKorshun/HTTPtodo/internal/model"
+	"github.com/AlexKorshun/HTTPtodo/internal/service"
 )
 
-type PostgresStorage struct {
+const (
+	queryGetAll     = `SELECT id, text, done FROM tasks`
+	queryCreate     = `INSERT INTO tasks (text) VALUES ($1) RETURNING id, text, done`
+	queryToggleDone = `UPDATE tasks SET done = NOT done WHERE id = $1 RETURNING id, text, done`
+	queryDelete     = `DELETE FROM tasks WHERE id = $1`
+)
+
+type Storage struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgresStorage(databaseURL string) (*PostgresStorage, error) {
+var _ service.Storage = (*Storage)(nil)
+
+func New(databaseURL string) (*Storage, error) {
 	pool, err := pgxpool.New(context.Background(), databaseURL)
 	if err != nil {
 		return nil, err
 	}
-	return &PostgresStorage{pool: pool}, nil
+	return &Storage{pool: pool}, nil
 }
 
-func (s *PostgresStorage) GetAll() ([]model.Task, error) {
-	ctx := context.Background()
+func (s *Storage) GetAll(ctx context.Context) ([]model.Task, error) {
 	tasks := []model.Task{}
-	rows, err := s.pool.Query(ctx, "SELECT id, text, done FROM tasks")
+	rows, err := s.pool.Query(ctx, queryGetAll)
 	if err != nil {
 		return tasks, fmt.Errorf("GetAll: чтение из базы даных: %w", err)
 	}
@@ -46,10 +55,9 @@ func (s *PostgresStorage) GetAll() ([]model.Task, error) {
 	return tasks, nil
 }
 
-func (s *PostgresStorage) Create(text string) (model.Task, error) {
-	ctx := context.Background()
+func (s *Storage) Create(ctx context.Context, text string) (model.Task, error) {
 	t := model.Task{}
-	row := s.pool.QueryRow(ctx, "INSERT INTO tasks (text) VALUES ($1) RETURNING id, text, done", text)
+	row := s.pool.QueryRow(ctx, queryCreate, text)
 	err := row.Scan(&t.ID, &t.Text, &t.Done)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("Create: %w", err)
@@ -57,10 +65,9 @@ func (s *PostgresStorage) Create(text string) (model.Task, error) {
 	return t, nil
 }
 
-func (s *PostgresStorage) ToggleDone(id int) (model.Task, error) {
-	ctx := context.Background()
+func (s *Storage) ToggleDone(ctx context.Context, id int) (model.Task, error) {
 	t := model.Task{}
-	row := s.pool.QueryRow(ctx, "UPDATE tasks SET done = NOT done WHERE id = $1 RETURNING id, text, done", id)
+	row := s.pool.QueryRow(ctx, queryToggleDone, id)
 	err := row.Scan(&t.ID, &t.Text, &t.Done)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Task{}, model.ErrNotFound
@@ -71,9 +78,8 @@ func (s *PostgresStorage) ToggleDone(id int) (model.Task, error) {
 	return t, nil
 }
 
-func (s *PostgresStorage) Delete(id int) error {
-	ctx := context.Background()
-	tag, err := s.pool.Exec(ctx, "DELETE FROM tasks WHERE id = $1", id)
+func (s *Storage) Delete(ctx context.Context, id int) error {
+	tag, err := s.pool.Exec(ctx, queryDelete, id)
 
 	if err != nil {
 		return fmt.Errorf("Delete: %w", err)

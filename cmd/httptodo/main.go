@@ -1,11 +1,9 @@
 package main
 
 import (
-	"fmt"
 	"log"
-	"net/http"
 
-	"github.com/AlexKorshun/HTTPtodo/internal/api"
+	"github.com/AlexKorshun/HTTPtodo/internal/api/httpapi"
 	"github.com/AlexKorshun/HTTPtodo/internal/config"
 	"github.com/AlexKorshun/HTTPtodo/internal/repository/postgres"
 	"github.com/AlexKorshun/HTTPtodo/internal/service"
@@ -16,20 +14,16 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	pgStorage, err := postgres.NewPostgresStorage(cfg.DatabaseURL)
+
+	pgStorage, err := postgres.New(cfg.DatabaseURL)
 	if err != nil {
 		log.Fatal(err)
 	}
-	service := service.NewTaskService(pgStorage)
-	handler := api.NewHandler(service)
+	svc := service.New(pgStorage)
+	handler := httpapi.NewHandler(svc)
+	mux := httpapi.NewRouter(handler)
 
-	http.HandleFunc("GET /tasks", handler.GetHandler)
-	http.HandleFunc("POST /tasks", handler.PostHandler)
-	http.HandleFunc("PATCH /tasks/{id}", handler.PatchHandler)
-	http.HandleFunc("DELETE /tasks/{id}", handler.DeleteHandler)
-
-	log.Printf("сервер запущен на :%s\n", cfg.Port)
-
-	log.Fatal(http.ListenAndServe(fmt.Sprintf(":%s", cfg.Port), nil))
+	server := httpapi.NewServer(cfg.Port, mux)
+	log.Fatal(server.Run())
 
 }

@@ -1,5 +1,9 @@
-CREATE TABLE IF NOT EXISTS tasks (
+-- +goose Up
+CREATE TABLE tasks (
     id INTEGER PRIMARY KEY GENERATED ALWAYS AS IDENTITY, 
     text TEXT NOT NULL, 
     done BOOLEAN NOT NULL DEFAULT FALSE
     );
+
+-- +goose Down
+DROP TABLE tasks;

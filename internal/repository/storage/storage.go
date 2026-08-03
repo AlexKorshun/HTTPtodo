@@ -1,16 +1,20 @@
 package storage
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
 
 	"github.com/AlexKorshun/HTTPtodo/internal/model"
+	"github.com/AlexKorshun/HTTPtodo/internal/service"
 )
 
 type FileStorage struct {
 	fileName string
 }
+
+var _ service.Storage = (*FileStorage)(nil)
 
 type File struct {
 	NextID int        `json:"nextID"`
@@ -43,7 +47,7 @@ func (s *FileStorage) save(file File) error {
 	return err
 }
 
-func (s *FileStorage) GetAll() ([]model.Task, error) {
+func (s *FileStorage) GetAll(ctx context.Context) ([]model.Task, error) {
 
 	file, err := s.load()
 	if err != nil {
@@ -53,7 +57,7 @@ func (s *FileStorage) GetAll() ([]model.Task, error) {
 	return convArrayToTask(file.Tasks), nil
 }
 
-func (s *FileStorage) Create(text string) (model.Task, error) {
+func (s *FileStorage) Create(ctx context.Context, text string) (model.Task, error) {
 	file, err := s.load()
 	if err != nil {
 		return model.Task{}, fmt.Errorf("Create: загрузка задач: %w", err)
@@ -66,7 +70,7 @@ func (s *FileStorage) Create(text string) (model.Task, error) {
 	return file.Tasks[len(file.Tasks)-1].convToTask(), nil
 }
 
-func (s *FileStorage) ToggleDone(id int) (model.Task, error) {
+func (s *FileStorage) ToggleDone(ctx context.Context, id int) (model.Task, error) {
 	file, err := s.load()
 	if err != nil {
 		return model.Task{}, fmt.Errorf("ToggleDone: загрузка задач: %w", err)
@@ -82,7 +86,7 @@ func (s *FileStorage) ToggleDone(id int) (model.Task, error) {
 	return file.Tasks[findTaskIndex(file.Tasks, id)].convToTask(), nil
 }
 
-func (s *FileStorage) Delete(id int) error {
+func (s *FileStorage) Delete(ctx context.Context, id int) error {
 	file, err := s.load()
 	if err != nil {
 		return fmt.Errorf("Delete: загрузка задач: %w", err)
