@@ -7,16 +7,16 @@ import (
 )
 
 type Server struct {
-	port string
-	mux  *http.ServeMux
+	port    string
+	handler http.Handler
 }
 
-func NewServer(port string, mux *http.ServeMux) Server {
-	return Server{port: port, mux: mux}
+func NewServer(port string, handler http.Handler) Server {
+	return Server{port: port, handler: handler}
 }
 
 func (s *Server) Run() error {
 	log.Printf("сервер запущен на :%s\n", s.port)
 
-	return http.ListenAndServe(fmt.Sprintf(":%s", s.port), s.mux)
+	return http.ListenAndServe(fmt.Sprintf(":%s", s.port), s.handler)
 }

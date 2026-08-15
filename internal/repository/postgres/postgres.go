@@ -12,13 +12,6 @@ import (
 	"github.com/AlexKorshun/HTTPtodo/internal/service"
 )
 
-const (
-	queryGetAll     = `SELECT id, text, done FROM tasks`
-	queryCreate     = `INSERT INTO tasks (text) VALUES ($1) RETURNING id, text, done`
-	queryToggleDone = `UPDATE tasks SET done = NOT done WHERE id = $1 RETURNING id, text, done`
-	queryDelete     = `DELETE FROM tasks WHERE id = $1`
-)
-
 type Storage struct {
 	pool *pgxpool.Pool
 }
@@ -33,9 +26,10 @@ func New(databaseURL string) (*Storage, error) {
 	return &Storage{pool: pool}, nil
 }
 
-func (s *Storage) GetAll(ctx context.Context) ([]model.Task, error) {
+func (s *Storage) GetAll(ctx context.Context, userID int64) ([]model.Task, error) {
+	const queryGetAll = `SELECT id, text, done FROM tasks WHERE user_id = $1`
 	tasks := []model.Task{}
-	rows, err := s.pool.Query(ctx, queryGetAll)
+	rows, err := s.pool.Query(ctx, queryGetAll, userID)
 	if err != nil {
 		return tasks, fmt.Errorf("GetAll: чтение из базы даных: %w", err)
 	}
@@ -55,9 +49,10 @@ func (s *Storage) GetAll(ctx context.Context) ([]model.Task, error) {
 	return tasks, nil
 }
 
-func (s *Storage) Create(ctx context.Context, text string) (model.Task, error) {
+func (s *Storage) Create(ctx context.Context, userID int64, text string) (model.Task, error) {
+	const queryCreate = `INSERT INTO tasks (text, user_id) VALUES ($1, $2) RETURNING id, text, done`
 	t := model.Task{}
-	row := s.pool.QueryRow(ctx, queryCreate, text)
+	row := s.pool.QueryRow(ctx, queryCreate, text, userID)
 	err := row.Scan(&t.ID, &t.Text, &t.Done)
 	if err != nil {
 		return model.Task{}, fmt.Errorf("Create: %w", err)
@@ -65,9 +60,10 @@ func (s *Storage) Create(ctx context.Context, text string) (model.Task, error) {
 	return t, nil
 }
 
-func (s *Storage) ToggleDone(ctx context.Context, id int) (model.Task, error) {
+func (s *Storage) ToggleDone(ctx context.Context, userID int64, id int) (model.Task, error) {
+	const queryToggleDone = `UPDATE tasks SET done = NOT done WHERE id = $1 AND user_id = $2 RETURNING id, text, done`
 	t := model.Task{}
-	row := s.pool.QueryRow(ctx, queryToggleDone, id)
+	row := s.pool.QueryRow(ctx, queryToggleDone, id, userID)
 	err := row.Scan(&t.ID, &t.Text, &t.Done)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.Task{}, model.ErrNotFound
@@ -78,8 +74,9 @@ func (s *Storage) ToggleDone(ctx context.Context, id int) (model.Task, error) {
 	return t, nil
 }
 
-func (s *Storage) Delete(ctx context.Context, id int) error {
-	tag, err := s.pool.Exec(ctx, queryDelete, id)
+func (s *Storage) Delete(ctx context.Context, userID int64, id int) error {
+	const queryDelete = `DELETE FROM tasks WHERE id = $1 AND user_id = $2`
+	tag, err := s.pool.Exec(ctx, queryDelete, id, userID)
 
 	if err != nil {
 		return fmt.Errorf("Delete: %w", err)
